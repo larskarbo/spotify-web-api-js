@@ -7,7 +7,9 @@
 var SpotifyWebApi = (function () {
   var _baseUri = 'https://api.spotify.com/v1';
   var _accessToken = null;
-  var _promiseImplementation = null;
+	var _promiseImplementation = null;
+	var _onError = ()=>{console.log('No onError function')}
+	var _onRenew = async()=>{console.log('No onRenew function implemented')}
 
   var WrapPromiseWithAbort = function (promise, onAbort) {
     promise.abort = onAbort;
@@ -72,7 +74,8 @@ var SpotifyWebApi = (function () {
   };
 
   var _performRequest = function (requestData, callback) {
-    var req = new XMLHttpRequest();
+		var req = new XMLHttpRequest();
+		let triedRenewing = false
 
     var promiseFunction = function (resolve, reject) {
       function success(data) {
@@ -84,9 +87,12 @@ var SpotifyWebApi = (function () {
         }
       }
 
-      function failure() {
+      function failure(message) {
+				console.log('fuck off here')
+				_onError(message)
+				console.log('req: ', req);
         if (reject) {
-          reject(req);
+					reject(req, message);
         }
         if (callback) {
           callback(req, null);
@@ -108,13 +114,36 @@ var SpotifyWebApi = (function () {
           try {
             data = req.responseText ? JSON.parse(req.responseText) : '';
           } catch (e) {
-            console.error(e);
+						failure('No internet')
+						console.error(e);
+						return
           }
 
           if (req.status >= 200 && req.status < 300) {
             success(data);
           } else {
-            failure();
+						console.log('fuckoff')
+						if(req.status == 0){
+							failure('No internet')
+						} else if(JSON.parse(req.response).error.message == "The access token expired"){
+							console.log('trying to renew access token')
+							if(!triedRenewing){
+								triedRenewing = true
+								_onRenew().then(asdf => {
+									console.log('success')
+									promiseFunction(resolve, reject)
+								}).catch(asdf => {
+									failure('The access token expired. Couldn\'t renew automatically.')
+								})
+							} else {
+								failure('The access token expired. Couldn\'t renew automatically.')
+							}
+						} else if(JSON.parse(req.response).error.message == "Invalid access token"){
+							failure('Invalid access token')
+						} else {
+							failure('Unknown error: ' + JSON.parse(req.response).error.message)
+
+						}
           }
         }
       };
@@ -2026,6 +2055,14 @@ var SpotifyWebApi = (function () {
    */
   Constr.prototype.setAccessToken = function (accessToken) {
     _accessToken = accessToken;
+	};
+	
+
+  Constr.prototype.setOnError = function (onError) {
+    _onError = onError;
+  };
+  Constr.prototype.setOnRenew = function (onRenew) {
+    _onRenew = onRenew;
   };
 
   /**
